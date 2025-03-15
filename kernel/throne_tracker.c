@@ -106,7 +106,7 @@ struct apk_path_hash {
 	struct list_head list;
 };
 
-static struct list_head apk_path_hash_list = LIST_HEAD_INIT(apk_path_hash_list);
+static struct list_head apk_path_hash_list;
 
 struct my_dir_context {
 	struct dir_context ctx;
@@ -202,17 +202,6 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 #endif
 				crown_manager(dirpath, my_ctx->private_data);
 				*my_ctx->stop = 1;
-
-				// Manager found, clear APK cache list
-				list_for_each_entry_safe(pos, n, &apk_path_hash_list, list) {
-					list_del(&pos->list);
-					kfree(pos);
-				}
-			} else {
-				struct apk_path_hash *apk_data = kmalloc(sizeof(struct apk_path_hash), GFP_ATOMIC);
-				apk_data->hash = hash;
-				apk_data->exists = true;
-				list_add_tail(&apk_data->list, &apk_path_hash_list);
 			}
 		}
 	}
@@ -225,6 +214,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 	int i, stop = 0;
 	struct list_head data_path_list;
 	INIT_LIST_HEAD(&data_path_list);
+	INIT_LIST_HEAD(&apk_path_hash_list);
 
 	// Initialize APK cache list
 	struct apk_path_hash *pos, *n;
@@ -239,9 +229,9 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 	list_add_tail(&data.list, &data_path_list);
 
 	for (i = depth; i > 0; i--) {
-		struct data_path *pos, *n;
+		struct data_path *pos;
 
-		list_for_each_entry_safe(pos, n, &data_path_list, list) {
+		list_for_each_entry_safe(pos, &data_path_list, list) {
 			struct my_dir_context ctx = { .ctx.actor = my_actor,
 						      .data_path_list = &data_path_list,
 						      .parent_dir = pos->dirpath,
@@ -269,11 +259,9 @@ skip_iterate:
 
 	// clear apk_path_hash_list unconditionally
 	pr_info("search manager: cleanup!\n");
-	list_for_each_entry_safe(pos, n, &apk_path_hash_list, list) {
-		if (!pos->exists) {
-			list_del(&pos->list);
-			kfree(pos);
-		}
+	list_for_each_entry_safe(pos, &apk_path_hash_list, list) {
+		list_del(&pos->list);
+		kfree(pos);
 	}
 }
 
@@ -352,7 +340,7 @@ void ksu_track_throne()
 
 	// now update uid list
 	struct uid_data *np;
-	struct uid_data *n;
+	struct uid_data;
 
 	// first, check if manager_uid exist!
 	bool manager_exist = false;
@@ -380,7 +368,7 @@ void ksu_track_throne()
 	ksu_prune_allowlist(is_uid_exist, &uid_list);
 out:
 	// free uid_list
-	list_for_each_entry_safe (np, n, &uid_list, list) {
+	list_for_each_entry_safe (np, &uid_list, list) {
 		list_del(&np->list);
 		kfree(np);
 	}
