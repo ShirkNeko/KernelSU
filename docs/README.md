@@ -16,12 +16,12 @@
 ## 如何添加
 在内核源码的根目录下执行以下命令：
 
-使用 susfs-dev 分支（已集成susfs）
+使用 susfs-dev 分支（已集成susfs，带非GKI设备的支持）
 ```
 curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh" | bash -s susfs-dev
 ```
 
-使用 main 分支
+使用 main 分支（不再带非GKI设备的支持）
 ```
 curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh" | bash -s main
 ```
@@ -29,8 +29,6 @@ curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setu
 ## 如何集成 susfs
 
 1. 直接使用 susfs-dev 分支，不需要再集成 susfs
-
-2. 对默认分支进行补丁，补丁文件在 [patch](../patch) 目录里
 
 
 ## 钩子方法
@@ -74,7 +72,7 @@ curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setu
 1. 基于内核的 `su` 和 root 访问管理
 2. 基于 5ec1cff 的 [Magic Mount](https://github.com/5ec1cff/KernelSU) 的模块系统
 3. [App Profile](https://kernelsu.org/guide/app-profile.html)：将 root 权限锁在笼子里
-4. 恢复对非 GKI 2.0 内核的支持
+4. 恢复对非 GKI 2.0 内核的支持（仅限susfs-dev和未进行susfs补丁的dev分支）
 5. 更多自定义功能
 
 

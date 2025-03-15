@@ -12,21 +12,24 @@ Android device root solution based on [KernelSU](https://github.com/KernelSU/Ker
 >
 > This is a project based on personal use of the second change, personal research and development use only
 
-- Fully adapted for non-GKI devices
+- Fully adapted for non-GKI devices (susfs-dev and unsusfs-patched dev branches only)
 
 ## How to add
+
+Using the susfs-dev branch (integrated susfs with support for non-GKI devices)
 ```
 curl -LSs “https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh” | bash -s susfs-dev
 ```
 
-
+Use main branching (no longer with support for non-GKI devices)
+```
+curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh" | bash -s main
+```
 
 ## How to use integrated susfs
 
 Use the susfs-dev branch directly without any patching
 
-
-Or use the default branch for patching, with files in [patch](../patch)
 
 ## More links
 Projects compiled based on Sukisu and susfs
