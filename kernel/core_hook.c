@@ -1,5 +1,4 @@
 #include <linux/capability.h>
-#include <linux/cred.h>
 #include <linux/dcache.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -103,14 +102,18 @@ static void setup_groups(struct root_profile *profile, struct cred *cred)
 			put_group_info(group_info);
 			return;
 		}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		group_info->gid[i] = kgid;
+#else
+		GROUP_AT(group_info, i) = kgid;
+#endif
 	}
 
 	groups_sort(group_info);
 	set_groups(cred, group_info);
 }
 
-static void disable_seccomp()
+static void disable_seccomp(void)
 {
 	assert_spin_locked(&current->sighand->siglock);
 	// disable seccomp
@@ -144,6 +147,7 @@ void escape_to_root(void)
 		rcu_read_unlock();
 		return;
 	}
+
 	struct root_profile *profile = ksu_get_root_profile(cred->uid.val);
 
 	cred->uid.val = profile->uid;
@@ -173,7 +177,7 @@ void escape_to_root(void)
 	       sizeof(cred->cap_bset));
 
 	setup_groups(profile, cred);
-
+	
 	rcu_read_unlock();
 
 	// Refer to kernel/seccomp.c: seccomp_set_mode_strict
@@ -236,10 +240,12 @@ static void nuke_ext4_sysfs() {
 	const char* name = sb->s_type->name;
 	if (strcmp(name, "ext4") != 0) {
 		pr_info("nuke but module aren't mounted\n");
+		path_put(&path);
 		return;
 	}
 
 	ext4_unregister_sysfs(sb);
+ 	path_put(&path);
 }
 
 int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
@@ -463,7 +469,6 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		}
 		return 0;
 	}
-
 	if (arg2 == CMD_ENABLE_SU) {
 		bool enabled = (arg3 != 0);
 		if (enabled == ksu_su_compat_enabled) {
@@ -473,21 +478,17 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 			}
 			return 0;
 		}
-
 		if (enabled) {
 			ksu_sucompat_init();
 		} else {
 			ksu_sucompat_exit();
 		}
 		ksu_su_compat_enabled = enabled;
-
 		if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
 			pr_err("prctl reply error, cmd: %lu\n", arg2);
 		}
-
 		return 0;
 	}
-
 	return 0;
 }
 
@@ -524,7 +525,8 @@ static void ksu_umount_mnt(struct path *path, int flags)
 {
 	int err = path_umount(path, flags);
 	if (err) {
-		pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
+		pr_info("umount %s failed, ret: %d\n",
+			path->dentry->d_iname, err);
 	}
 }
 
@@ -546,6 +548,7 @@ static void try_umount(const char *mnt, bool check_mnt, int flags)
 		return;
 	}
 
+	pr_info("%s: %s\n", __func__, mnt);
 	ksu_umount_mnt(&path, flags);
 }
 
@@ -607,34 +610,78 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
 	try_umount("/vendor", true, 0);
 	try_umount("/product", true, 0);
 	try_umount("/system_ext", true, 0);
+	
+	// try umount modules path
 	try_umount("/data/adb/modules", false, MNT_DETACH);
 
 	// try umount ksu temp path
 	try_umount("/debug_ramdisk", false, MNT_DETACH);
+	try_umount("/sbin", false, MNT_DETACH);
 
 	return 0;
 }
 
-// Init functons
-
-static int handler_pre(struct kprobe *p, struct pt_regs *regs)
+static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
+			  unsigned long arg4, unsigned long arg5)
 {
-	struct pt_regs *real_regs = PT_REAL_REGS(regs);
-	int option = (int)PT_REGS_PARM1(real_regs);
-	unsigned long arg2 = (unsigned long)PT_REGS_PARM2(real_regs);
-	unsigned long arg3 = (unsigned long)PT_REGS_PARM3(real_regs);
-	// PRCTL_SYMBOL is the arch-specificed one, which receive raw pt_regs from syscall
-	unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
-	unsigned long arg5 = (unsigned long)PT_REGS_PARM5(real_regs);
-
-	return ksu_handle_prctl(option, arg2, arg3, arg4, arg5);
+	ksu_handle_prctl(option, arg2, arg3, arg4, arg5);
+	return -ENOSYS;
+}
+// kernel 4.4 and 4.9
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||	\
+	defined(CONFIG_IS_HW_HISI) ||	\
+	defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
+static int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
+			      unsigned perm)
+{
+	if (init_session_keyring != NULL) {
+		return 0;
+	}
+	if (strcmp(current->comm, "init")) {
+		// we are only interested in `init` process
+		return 0;
+	}
+	init_session_keyring = cred->session_keyring;
+	pr_info("kernel_compat: got init_session_keyring\n");
+	return 0;
+}
+#endif
+static int ksu_inode_rename(struct inode *old_inode, struct dentry *old_dentry,
+			    struct inode *new_inode, struct dentry *new_dentry)
+{
+	return ksu_handle_rename(old_dentry, new_dentry);
 }
 
-static struct kprobe prctl_kp = {
-	.symbol_name = PRCTL_SYMBOL,
-	.pre_handler = handler_pre,
+static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
+			       int flags)
+{
+	return ksu_handle_setuid(new, old);
+}
+
+#ifndef MODULE
+static struct security_hook_list ksu_hooks[] = {
+	LSM_HOOK_INIT(task_prctl, ksu_task_prctl),
+	LSM_HOOK_INIT(inode_rename, ksu_inode_rename),
+	LSM_HOOK_INIT(task_fix_setuid, ksu_task_fix_setuid),
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||	\
+	defined(CONFIG_IS_HW_HISI) ||	\
+	defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
+	LSM_HOOK_INIT(key_permission, ksu_key_permission)
+#endif
 };
 
+void __init ksu_lsm_hook_init(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");
+#else
+	// https://elixir.bootlin.com/linux/v4.10.17/source/include/linux/lsm_hooks.h#L1892
+	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks));
+#endif
+}
+
+#else
+// keep renameat_handler for LKM support
 static int renameat_handler_pre(struct kprobe *p, struct pt_regs *regs)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
@@ -655,61 +702,6 @@ static struct kprobe renameat_kp = {
 	.pre_handler = renameat_handler_pre,
 };
 
-__maybe_unused int ksu_kprobe_init(void)
-{
-	int rc = 0;
-	rc = register_kprobe(&prctl_kp);
-
-	if (rc) {
-		pr_info("prctl kprobe failed: %d.\n", rc);
-		return rc;
-	}
-
-	rc = register_kprobe(&renameat_kp);
-	pr_info("renameat kp: %d\n", rc);
-
-	return rc;
-}
-
-__maybe_unused int ksu_kprobe_exit(void)
-{
-	unregister_kprobe(&prctl_kp);
-	unregister_kprobe(&renameat_kp);
-	return 0;
-}
-
-static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
-			  unsigned long arg4, unsigned long arg5)
-{
-	ksu_handle_prctl(option, arg2, arg3, arg4, arg5);
-	return -ENOSYS;
-}
-
-static int ksu_inode_rename(struct inode *old_inode, struct dentry *old_dentry,
-			    struct inode *new_inode, struct dentry *new_dentry)
-{
-	return ksu_handle_rename(old_dentry, new_dentry);
-}
-
-static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
-			       int flags)
-{
-	return ksu_handle_setuid(new, old);
-}
-
-#ifndef MODULE
-static struct security_hook_list ksu_hooks[] = {
-	LSM_HOOK_INIT(task_prctl, ksu_task_prctl),
-	LSM_HOOK_INIT(inode_rename, ksu_inode_rename),
-	LSM_HOOK_INIT(task_fix_setuid, ksu_task_fix_setuid),
-};
-
-void __init ksu_lsm_hook_init(void)
-{
-	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");
-}
-
-#else
 static int override_security_head(void *head, const void *new_head, size_t len)
 {
 	unsigned long base = (unsigned long)head & PAGE_MASK;
@@ -884,9 +876,4 @@ void __init ksu_core_init(void)
 
 void ksu_core_exit(void)
 {
-#ifdef CONFIG_KPROBE
-	pr_info("ksu_core_kprobe_exit\n");
-	// we dont use this now
-	// ksu_kprobe_exit();
-#endif
 }
