@@ -1,5 +1,4 @@
 #include <linux/capability.h>
-#include <linux/cred.h>
 #include <linux/dcache.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -48,10 +47,6 @@
 #include "throne_tracker.h"
 #include "throne_tracker.h"
 #include "kernel_compat.h"
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0) || defined(KSU_COMPAT_GET_CRED_RCU)
-#define KSU_GET_CRED_RCU
-#endif
 
 #ifdef CONFIG_KSU_SUSFS
 bool susfs_is_allow_su(void)
