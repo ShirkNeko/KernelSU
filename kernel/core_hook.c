@@ -207,7 +207,6 @@ void ksu_escape_to_root(void)
 {
 	struct cred *cred;
 
-#ifdef KSU_GET_CRED_RCU
 	rcu_read_lock();
 
 	do {
@@ -220,14 +219,6 @@ void ksu_escape_to_root(void)
 		rcu_read_unlock();
 		return;
 	}
-#else
-	cred = (struct cred *)__task_cred(current);
-
-	if (cred->euid.val == 0) {
-		pr_warn("Already root, don't escape!\n");
-		return;
-	}
-#endif
 
 	struct root_profile *profile = ksu_get_root_profile(cred->uid.val);
 
@@ -256,16 +247,10 @@ void ksu_escape_to_root(void)
 	       sizeof(cred->cap_permitted));
 	memcpy(&cred->cap_bset, &profile->capabilities.effective,
 	       sizeof(cred->cap_bset));
-	// set ambient caps to all-zero
-	// fixes "operation not permitted" on dbus cap dropping
-	memset(&cred->cap_ambient, 0,
-			sizeof(cred->cap_ambient));
 
 	setup_groups(profile, cred);
-
-#ifdef KSU_GET_CRED_RCU
+	
 	rcu_read_unlock();
-#endif
 
 	// Refer to kernel/seccomp.c: seccomp_set_mode_strict
 	// When disabling Seccomp, ensure that current->sighand->siglock is held during the operation.
@@ -327,10 +312,12 @@ static void nuke_ext4_sysfs() {
 	const char* name = sb->s_type->name;
 	if (strcmp(name, "ext4") != 0) {
 		pr_info("nuke but module aren't mounted\n");
+		path_put(&path);
 		return;
 	}
 
 	ext4_unregister_sysfs(sb);
+ 	path_put(&path);
 }
 
 int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
@@ -1410,9 +1397,4 @@ void __init ksu_core_init(void)
 
 void ksu_core_exit(void)
 {
-#ifdef CONFIG_KPROBES
-	pr_info("ksu_core_kprobe_exit\n");
-	// we dont use this now
-	// ksu_kprobe_exit();
-#endif
 }

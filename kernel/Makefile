@@ -69,15 +69,15 @@ endif
 
 # Handle optional backports
 ifeq ($(shell grep -q "strncpy_from_user_nofault" $(srctree)/include/linux/uaccess.h; echo $$?),0)
-ccflags-y += -DKSU_STRNCPY_FROM_USER_NOFAULT
+ccflags-y += -DKSU_OPTIONAL_STRNCPY
 endif
 
 ifeq ($(shell grep -q "ssize_t kernel_read" $(srctree)/fs/read_write.c; echo $$?),0)
-ccflags-y += -DKSU_KERNEL_READ
+ccflags-y += -DKSU_OPTIONAL_KERNEL_READ
 endif
 
 ifeq ($(shell grep "ssize_t kernel_write" $(srctree)/fs/read_write.c | grep -q "const void" ; echo $$?),0)
-ccflags-y += -DKSU_KERNEL_WRITE
+ccflags-y += -DKSU_OPTIONAL_KERNEL_WRITE
 endif
 # Checks Samsung UH drivers
 ifeq ($(shell grep -q "CONFIG_KDP_CRED" $(srctree)/kernel/cred.c; echo $$?),0)
@@ -116,6 +116,11 @@ ccflags-y += -DEXPECTED_HASH=\"$(KSU_EXPECTED_HASH)\"
 
 ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
 ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
+
+ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
+$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h;)
+$(info -- KSU_SUSFS: adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
+endif
 
 ## For susfs stuff ##
 ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)

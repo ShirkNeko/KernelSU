@@ -117,7 +117,10 @@ struct my_dir_context {
 	int *stop;
 };
 // https://docs.kernel.org/filesystems/porting.html
-// filldir_t (readdir callbacks) calling conventions have changed. Instead of returning 0 or -E... it returns bool now. false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions). Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
+// filldir_t (readdir callbacks) calling conventions have changed.
+// Instead of returning 0 or -E... it returns bool now.
+// false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions).
+// Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 #define FILLDIR_RETURN_TYPE bool
 #define FILLDIR_ACTOR_CONTINUE true
@@ -175,7 +178,7 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 		list_add_tail(&data->list, my_ctx->data_path_list);
 	} else {
 		if ((namelen == 8) && (strncmp(name, "base.apk", namelen) == 0)) {
-			struct apk_path_hash *pos, *n;
+			struct apk_path_hash *pos;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 			unsigned int hash = full_name_hash(dirpath, strlen(dirpath));
 #else
@@ -189,9 +192,14 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 			}
 
 			bool is_manager = ksu_is_manager_apk(dirpath);
+#ifdef CONFIG_KSU_DEBUG
 			pr_info("Found new base.apk at path: %s, is_manager: %d\n",
 				dirpath, is_manager);
+#endif
 			if (is_manager) {
+#ifndef CONFIG_KSU_DEBUG
+				pr_info("Found new KernelSU base.apk at path: %s\n", dirpath);
+#endif
 				crown_manager(dirpath, my_ctx->private_data);
 				*my_ctx->stop = 1;
 
@@ -259,7 +267,8 @@ skip_iterate:
 		}
 	}
 
-	// Remove stale cached APK entries
+	// clear apk_path_hash_list unconditionally
+	pr_info("search manager: cleanup!\n");
 	list_for_each_entry_safe(pos, n, &apk_path_hash_list, list) {
 		if (!pos->exists) {
 			list_del(&pos->list);
