@@ -3,9 +3,9 @@
 **Enlish** | [简体中文](README.md)
 
 
-Android device root solution based on [KernelSU](https://github.com/KernelSU/KernelSU)
+Android device root solution based on [KernelSU](https://github.com/tiann/KernelSU)
 
-**Experimental! Use at your own risk!** This solution is based on [KernelSU](https://github.com/KernelSU/KernelSU) and is experimental!
+**Experimental! Use at your own risk!** This solution is based on [KernelSU](https://github.com/tiann/KernelSU) and is experimental!
 
 >
 > This is an unofficial fork. All rights are reserved to [@tiann](https://github.com/tiann)
@@ -78,7 +78,7 @@ Note: You only need to fill in the first two parts of kernel versions, such as 5
 ## Features
 
 1. Kernel-based `su` and root access management.
-2. Not based on [OverlayFS](https://en.wikipedia.org/wiki/OverlayFS) module system, but using [Magic Mount](https://github.com/KernelSU/KernelSU)
+2. Not based on [OverlayFS](https://en.wikipedia.org/wiki/OverlayFS) module system, but based on [Magic Mount](https://github.com/5ec1cff/KernelSU) from 5ec1cff
 3. [App Profile](https://kernelsu.org/guide/app-profile.html): Lock root privileges in a cage. 
 4. Bringing back non-GKI/GKI 1.0 support
 5. More customization
